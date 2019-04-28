@@ -4,6 +4,7 @@ import 'package:graphql_flutter/src/utilities/traverse.dart';
 import 'package:graphql_flutter/src/utilities/helpers.dart';
 import 'package:graphql_flutter/src/cache/in_memory.dart';
 import 'package:graphql_flutter/src/cache/lazy_cache_map.dart';
+import 'dart:collection';
 
 typedef DataIdFromObject = String Function(Object node);
 
@@ -90,25 +91,27 @@ class NormalizedInMemoryCache extends InMemoryCache {
   }
 
   Normalizer _normalizerFor(Map<String, Object> into) {
+    final seenDataIds = HashSet<String>();
+
     List<String> normalizer(Object node) {
       final String dataId = dataIdFromObject(node);
       if (dataId != null) {
-        writeInto(dataId, node, into, normalizer);
+        final dynamic existing = into[dataId];
+        // Only write if we haven't previously encountered
+        // or there are new keys
+        if (!seenDataIds.contains(dataId) ||
+            (existing is Map<String, Object> &&
+                node is Map<String, Object> &&
+                !HashSet.from(existing.keys).containsAll(node.keys))) {
+          seenDataIds.add(dataId);
+          writeInto(dataId, node, into, normalizer);
+        }
         return <String>[prefix, dataId];
       }
       return null;
     }
 
     return normalizer;
-  }
-
-  List<String> _normalize(Object node) {
-    final String dataId = dataIdFromObject(node);
-    if (dataId != null) {
-      writeInto(dataId, node, data, _normalize);
-      return <String>[prefix, dataId];
-    }
-    return null;
   }
 
   /// Writes included objects to provided Map,
@@ -138,7 +141,7 @@ class NormalizedInMemoryCache extends InMemoryCache {
   /// replacing discernable entities with references
   @override
   void write(String key, Object value) {
-    writeInto(key, value, data, _normalize);
+    writeInto(key, value, data);
   }
 }
 
